@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Local Drivers Admin</title>
+    <style>
+      body { font-family: system-ui, sans-serif; max-width: 960px; margin: 24px auto; padding: 0 16px; }
+      h1 { font-size: 1.5rem; }
+      label { display: block; margin-top: 12px; font-weight: 600; }
+      input, textarea { width: 100%; padding: 8px; margin-top: 4px; font-size: 16px; }
+      button { margin-top: 12px; padding: 10px 16px; font-size: 16px; cursor: pointer; }
+      .card { border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin: 12px 0; }
+      .muted { color: #666; font-size: 14px; }
+      .flag { background: #fff3cd; padding: 8px; border-radius: 6px; margin: 8px 0; }
+      pre { white-space: pre-wrap; font-size: 13px; background: #f5f5f5; padding: 8px; }
+      .error { color: #b71c1c; }
+    </style>
+  </head>
+  <body>
+    <h1>Local Drivers — Admin</h1>
+    <p class="muted">Sign in to the Android app with an admin account, copy the JWT from dev tools or a debug screen, paste below.</p>
+    <label>API base URL</label>
+    <input id="api" value="" placeholder="https://your-api.onrender.com" />
+    <label>Admin Bearer token</label>
+    <input id="token" type="password" placeholder="JWT" />
+    <button type="button" id="load">Load pending drivers & reports</button>
+    <p id="err" class="error"></p>
+    <div id="flagged"></div>
+    <div id="drivers"></div>
+    <div id="reports"></div>
+    <script>
+      const apiEl = document.getElementById("api");
+      const tokenEl = document.getElementById("token");
+      const errEl = document.getElementById("err");
+      apiEl.value = localStorage.getItem("adminApi") || window.location.origin;
+
+      async function api(path, opts = {}) {
+        const base = apiEl.value.replace(/\/$/, "");
+        const res = await fetch(base + path, {
+          ...opts,
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer " + tokenEl.value,
+            ...(opts.headers || {}),
+          },
+        });
+        const text = await res.text();
+        let data;
+        try { data = JSON.parse(text); } catch { data = { raw: text }; }
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        return data;
+      }
+
+      document.getElementById("load").onclick = async () => {
+        errEl.textContent = "";
+        localStorage.setItem("adminApi", apiEl.value);
+        const driversHost = document.getElementById("drivers");
+        const reportsHost = document.getElementById("reports");
+        const flaggedHost = document.getElementById("flagged");
+        driversHost.innerHTML = reportsHost.innerHTML = flaggedHost.innerHTML = "Loading…";
+        try {
+          const pending = await api("/api/admin/drivers?status=pending");
+          const reports = await api("/api/admin/reports");
+          flaggedHost.innerHTML = "";
+          if (reports.flaggedDrivers?.length) {
+            flaggedHost.innerHTML = "<h2>Flagged (3+ open reports)</h2>";
+            reports.flaggedDrivers.forEach((f) => {
+              const d = document.createElement("div");
+              d.className = "flag";
+              d.textContent = f.driverName + " — " + f.openReportCount + " open reports";
+              flaggedHost.appendChild(d);
+            });
+          }
+          driversHost.innerHTML = "<h2>Pending drivers (" + pending.total + ")</h2>";
+          pending.drivers.forEach((d) => {
+            const card = document.createElement("div");
+            card.className = "card";
+            card.innerHTML =
+              "<strong>" + d.fullName + "</strong><br>" +
+              d.vehicleModel + " · " + d.seats + " seats · ₹" + d.ratePerKm + "/km<br>" +
+              "<span class='muted'>" + d.basePlace.name + "</span><pre>" +
+              JSON.stringify(d, null, 2) + "</pre>";
+            const approve = document.createElement("button");
+            approve.textContent = "Approve";
+            approve.onclick = async () => {
+              await api("/api/admin/drivers/" + d.id + "/status", {
+                method: "PATCH",
+                body: JSON.stringify({ status: "approved" }),
+              });
+              card.remove();
+            };
+            const reject = document.createElement("button");
+            reject.textContent = "Reject";
+            reject.onclick = async () => {
+              const reason = prompt("Rejection reason (required)");
+              if (!reason) return;
+              await api("/api/admin/drivers/" + d.id + "/status", {
+                method: "PATCH",
+                body: JSON.stringify({ status: "rejected", reason }),
+              });
+              card.remove();
+            };
+            card.appendChild(approve);
+            card.appendChild(reject);
+            driversHost.appendChild(card);
+          });
+          reportsHost.innerHTML = "<h2>Open reports</h2>";
+          reports.reports.forEach((r) => {
+            const card = document.createElement("div");
+            card.className = "card";
+            card.innerHTML =
+              r.driverName + " — " + r.reason + "<br><span class='muted'>By " +
+              r.reporterName + "</span>";
+            const resolve = document.createElement("button");
+            resolve.textContent = "Resolve";
+            resolve.onclick = async () => {
+              await api("/api/admin/reports/" + r.id + "/resolve", { method: "PATCH" });
+              card.remove();
+            };
+            card.appendChild(resolve);
+            reportsHost.appendChild(card);
+          });
+        } catch (e) {
+          errEl.textContent = e.message || String(e);
+          driversHost.innerHTML = reportsHost.innerHTML = "";
+        }
+      };
+    </script>
+  </body>
+</html>
