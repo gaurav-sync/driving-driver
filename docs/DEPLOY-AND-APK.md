@@ -7,6 +7,14 @@ You need: **MongoDB Atlas**, **Google OAuth**, **Render** (free), **Expo** (free
 1. Create free cluster → Database Access user → Network Access `0.0.0.0/0` (or Render IPs).
 2. Copy connection string → `MONGODB_URI`.
 
+## 2a. Deploy API on Render (recommended)
+
+Long-running Node + MongoDB fits Render better than Vercel serverless.
+
+## 2b. Deploy API on Vercel (optional)
+
+Set **Root Directory** = `server` in the Vercel project. Add env vars: `MONGODB_URI`, `JWT_SECRET`, `GOOGLE_CLIENT_ID`, `ADMIN_EMAILS` (required at cold start). Open `/health` then `/admin/`.
+
 ## 2. Deploy API on Render
 
 1. Push this repo to **GitHub** (private is fine).
